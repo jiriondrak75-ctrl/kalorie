@@ -1,0 +1,33 @@
+name: kalorie
+description: "Jednoduchý tracker kalorií."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  shared_preferences: ^2.3.0
+  http: ^1.2.0
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "ico/kalorie.jpg"
+  # Android 8+ ořezává ikonu, proto popředí s okrajem.
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "ico/kalorie_foreground.png"
