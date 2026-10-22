@@ -4,16 +4,22 @@ import '../theme.dart';
 
 /// Zaoblený řádek seznamu ve stylu Nákupního seznamu.
 class RowCard extends StatelessWidget {
+  final IconData? icon;
+  final Color? iconColor;
   final String title;
   final String? subtitle;
   final String? trailing;
+  final Color? trailingColor;
   final VoidCallback? onTap;
 
   const RowCard({
     super.key,
+    this.icon,
+    this.iconColor,
     required this.title,
     this.subtitle,
     this.trailing,
+    this.trailingColor,
     this.onTap,
   });
 
@@ -33,6 +39,10 @@ class RowCard extends StatelessWidget {
           ),
           child: Row(
             children: [
+              if (icon != null) ...[
+                Icon(icon, color: iconColor ?? textDim, size: 22),
+                SizedBox(width: 14 * scale),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,8 +63,8 @@ class RowCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 Text(
                   trailing!,
-                  style: const TextStyle(
-                    color: textColor,
+                  style: TextStyle(
+                    color: trailingColor ?? textColor,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),

@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../theme.dart';
 
-/// Kruhový graf snědených kcal vůči dennímu limitu. Uprostřed čísla.
+/// Kruhový graf bilance dne (snědeno − spáleno) vůči dennímu limitu.
+/// Uprostřed čísla.
 class KcalRing extends StatelessWidget {
   final double kcal;
   final double goal;
@@ -19,7 +20,7 @@ class KcalRing extends StatelessWidget {
     final over = left < 0;
     return Semantics(
       label:
-          'Snědeno ${fmtNum(kcal, decimals: 0)} z ${fmtNum(goal, decimals: 0)} kcal',
+          'Bilance ${fmtNum(kcal, decimals: 0)} z ${fmtNum(goal, decimals: 0)} kcal',
       child: SizedBox.square(
         dimension: size,
         child: CustomPaint(

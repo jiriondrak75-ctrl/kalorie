@@ -10,6 +10,9 @@ const blueLight = Color(0xFF1177BB);
 const textColor = Color(0xFFD4D4D4);
 const textDim = Color(0xFF858585);
 const danger = Color(0xFFB71C1C); // Colors.red.shade900
+// Akcent pro aktivity. Nákupní seznam žádný třetí akcent nemá, tahle
+// tyrkysová je z téže palety VS Code a nesplete se s modrou ani červenou.
+const activityColor = Color(0xFF4EC9B0);
 
 const radius = 12.0;
 
@@ -31,6 +34,8 @@ ThemeData buildTheme() {
       onPrimary: Colors.white,
       secondary: blueLight,
       onSecondary: Colors.white,
+      tertiary: activityColor,
+      onTertiary: Colors.black,
       secondaryContainer: surfaceVariant,
       onSecondaryContainer: textColor,
       onSurface: textColor,
@@ -94,6 +99,14 @@ ThemeData buildTheme() {
         side: const BorderSide(color: textDim),
         visualDensity: VisualDensity.compact,
       ),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: surface,
+      selectedColor: blue,
+      side: BorderSide.none,
+      shape: rounded,
+      labelStyle: GoogleFonts.nunito(color: textColor),
+      showCheckmark: false,
     ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(color: blueLight),
   );

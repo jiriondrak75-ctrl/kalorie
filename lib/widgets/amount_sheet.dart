@@ -3,32 +3,80 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../theme.dart';
 
-/// Spodní panel pro zadání množství. Vrací množství, nebo null.
+/// Spodní panel pro zadání množství jídla. Vrací množství, nebo null.
 Future<double?> showAmountSheet(
   BuildContext context, {
   required Food food,
   required double initialAmount,
   String saveLabel = 'Přidat',
 }) {
-  return showModalBottomSheet<double>(
-    context: context,
-    isScrollControlled: true,
-    builder: (_) => _AmountSheet(
-      food: food,
+  final per = food.perServing ? '1 porce' : '100 g';
+  return _show(
+    context,
+    _AmountSheet(
+      title: food.name,
+      subtitle: [
+        if (food.brand != null) food.brand!,
+        '${fmtNum(food.kcal, decimals: 0)} kcal / $per',
+      ].join(' · '),
+      unit: food.unit,
       initialAmount: initialAmount,
+      kcalText: (a) =>
+          '${fmtNum(food.kcal * food.factor(a), decimals: 0)} kcal',
       saveLabel: saveLabel,
     ),
   );
 }
 
+/// Spodní panel pro délku aktivity v minutách. Vrací minuty, nebo null.
+Future<double?> showMinutesSheet(
+  BuildContext context, {
+  required Activity activity,
+  required double initialMinutes,
+  required double weightKg,
+  String saveLabel = 'Přidat',
+}) {
+  return _show(
+    context,
+    _AmountSheet(
+      title: activity.name,
+      subtitle: 'MET ${fmtNum(activity.met!)} · ${fmtNum(weightKg)} kg',
+      unit: 'min',
+      initialAmount: initialMinutes,
+      kcalText: (m) =>
+          '${fmtNum(-activity.kcalFor(m, weightKg), decimals: 0)} kcal',
+      kcalColor: activityColor,
+      presets: const [15, 30, 45, 60, 90],
+      saveLabel: saveLabel,
+    ),
+  );
+}
+
+Future<double?> _show(BuildContext context, _AmountSheet sheet) =>
+    showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => sheet,
+    );
+
 class _AmountSheet extends StatefulWidget {
-  final Food food;
+  final String title;
+  final String subtitle;
+  final String unit;
   final double initialAmount;
+  final String Function(double amount) kcalText;
+  final Color kcalColor;
+  final List<double> presets;
   final String saveLabel;
 
   const _AmountSheet({
-    required this.food,
+    required this.title,
+    required this.subtitle,
+    required this.unit,
     required this.initialAmount,
+    required this.kcalText,
+    this.kcalColor = textColor,
+    this.presets = const [],
     required this.saveLabel,
   });
 
@@ -66,11 +114,19 @@ class _AmountSheetState extends State<_AmountSheet> {
     if (a != null) Navigator.of(context).pop(a);
   }
 
+  void _setPreset(double v) {
+    final text = fmtNum(v);
+    setState(
+      () => _controller.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final food = widget.food;
     final amount = _amount;
-    final per = food.perServing ? '1 porce' : '100 g';
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -83,18 +139,12 @@ class _AmountSheetState extends State<_AmountSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            food.name,
+            widget.title,
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
-          Text(
-            [
-              if (food.brand != null) food.brand!,
-              '${fmtNum(food.kcal, decimals: 0)} kcal / $per',
-            ].join(' · '),
-            style: const TextStyle(color: textDim),
-          ),
+          Text(widget.subtitle, style: const TextStyle(color: textDim)),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -105,23 +155,37 @@ class _AmountSheetState extends State<_AmountSheet> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: InputDecoration(suffixText: food.unit),
+                  decoration: InputDecoration(suffixText: widget.unit),
                   onChanged: (_) => setState(() {}),
                   onSubmitted: (_) => _save(),
                 ),
               ),
               const SizedBox(width: 16),
               Text(
-                amount == null
-                    ? '– kcal'
-                    : '${fmtNum(food.kcal * food.factor(amount), decimals: 0)} kcal',
-                style: const TextStyle(
+                amount == null ? '– kcal' : widget.kcalText(amount),
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
+                  color: widget.kcalColor,
                 ),
               ),
             ],
           ),
+          if (widget.presets.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in widget.presets)
+                  ChoiceChip(
+                    label: Text(fmtNum(p)),
+                    selected: amount == p,
+                    onSelected: (_) => _setPreset(p),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,

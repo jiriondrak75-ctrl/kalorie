@@ -5,17 +5,24 @@ Hlavní zásada: **co nejméně kroků a žádné zbytečnosti.** Každá nová 
 
 ## Co aplikace umí (a nic víc)
 
-- Jeden seznam jídel za den. **Žádné členění na snídani, oběd a večeři.**
+- Jeden seznam za den, jídlo i aktivity v pořadí přidání. **Žádné členění na snídani, oběd a večeři.**
 - Přepínání dnů: včera, dnes, zítra a libovolný den přes kalendář. Jídlo jde přidat i dopředu.
-- Součet kcal za den a pod ním souhrn makroživin (bílkoviny, sacharidy, tuky), pokud jsou k dispozici.
-- Nastavení (ikona vpravo nahoře): pohlaví, hmotnost, výška, věk → bazální metabolismus (Mifflin-St Jeor, `Settings.bmr`), a denní limit kcal. Když je limit zadaný, součet je uvnitř kruhového grafu se „zbývá X“ (nad limitem červeně „přes o X“).
+- Velké číslo je bilance dne (snědeno − spáleno). Když jsou aktivity, pod ním „snědeno X, spáleno Y“. Pod tím makra (jen z jídla), pokud jsou k dispozici.
+- Nastavení (ikona vpravo nahoře): pohlaví, hmotnost, výška, věk → bazální metabolismus (Mifflin-St Jeor, `Settings.bmr`), a denní limit kcal. Když je limit zadaný, bilance je uvnitř kruhového grafu se „zbývá X“ (nad limitem červeně „přes o X“).
+- Dvě tlačítka dole: **Jídlo** a **Aktivita** (dva černé `FloatingActionButton.extended`, rozlišené barvou ikony).
 - Přidání jídla:
   - Při psaní se živě filtrují naposledy použité a vestavěné potraviny, bez sítě a bez ohledu na diakritiku.
   - Když lokálně nic není (a dotaz má aspoň 3 znaky), spustí se hledání v Open Food Facts samo, 0,8 s po dopsání. Enter ho spustí vždy.
   - Každá přidaná potravina (i z OFF a ručně zadaná) se uloží do `recent`, které slouží jako vlastní databáze (max. 1000 položek).
   - „Zadat ručně“ uloží jen název a celkové kcal.
-- Naposledy použité potraviny si pamatují poslední množství, takže opakované jídlo jsou dvě klepnutí.
-- Klepnutí na záznam změní množství, swipe doleva ho smaže (s možností vrátit).
+- Přidání aktivity:
+  - Pole „Jakou aktivitu?“, živý filtr přes naposledy použité (`recent_act`) a vestavěné aktivity. **Žádné online hledání.**
+  - Spodní panel s délkou v minutách, rychlé volby 15/30/45/60/90 a živý přepočet `kcal = MET × kg × min / 60` (zaokrouhleno).
+  - „Zadat ručně“ = název + celkové kcal (třeba z hodinek), bez délky.
+  - Při první aktivitě bez vyplněné hmotnosti se na ni zeptá dialog a uloží ji do nastavení.
+  - V seznamu má aktivita ikonu běžce, kcal jako `−345 kcal` v barvě `activityColor` a podtitul `45 min`.
+- Naposledy použité potraviny a aktivity si pamatují poslední množství / délku, takže opakování jsou dvě klepnutí.
+- Klepnutí na záznam změní množství / délku (u ruční aktivity název a kcal), swipe doleva ho smaže (s možností vrátit).
 - Data jsou jen lokálně v telefonu. Žádný účet, žádný backend.
 
 ## Struktura
@@ -27,17 +34,27 @@ lib/
   storage.dart              Store – shared_preferences, klíč day_YYYY-MM-DD + recent
   off_api.dart              Open Food Facts search (bez API klíče)
   builtin_foods.dart        základní potraviny s orientačními hodnotami na 100 g
-  screens/home_screen.dart  den, součet, seznam
-  screens/search_screen.dart hledání + ruční zadání
+  builtin_activities.dart   běžné aktivity s MET (Compendium of Physical Activities)
+  screens/home_screen.dart  den, bilance, společný seznam jídla a aktivit, dialog hmotnosti
+  screens/search_screen.dart hledání jídla (lokálně + OFF) a aktivit (jen lokálně), sdílený vzhled
   screens/settings_screen.dart tělesné údaje, BMR a denní limit (ukládá průběžně)
   widgets/kcal_ring.dart    kruhový graf snědeno / limit (CustomPainter, bez knihovny)
   theme.dart                barvy a ThemeData převzaté z Nákupního seznamu
-  widgets/amount_sheet.dart spodní panel pro množství
-  widgets/row_card.dart     zaoblený řádek seznamu (sdílený vzhled)
+  widgets/amount_sheet.dart spodní panel pro množství jídla / minuty aktivity (sdílený)
+  widgets/manual_dialog.dart ruční zadání název + kcal (jídlo i aktivita)
+  widgets/row_card.dart     zaoblený řádek seznamu (sdílený vzhled, volitelná ikona)
 ```
 
 Model: `Food.kcal` (a makra) jsou na 100 g, nebo na 1 porci, když `perServing == true`.
 `Entry` drží celou kopii `Food` a množství, takže změna databáze potravin nemění historii.
+`Entry.createdAt` je čas přidání; starší záznamy ho nemají (null) a v seznamu jdou první v původním pořadí.
+
+`Activity` má buď `met` (výdej se počítá), nebo pevné `kcal` (ručně zadaná, `manual`).
+`ActivityEntry` (id, activity, minutes, weightKg, createdAt) drží kopii `Activity` a **snapshot hmotnosti**,
+takže pozdější změna hmotnosti historii nemění. U ručních je `minutes == null`.
+
+Úložiště: `day_YYYY-MM-DD` (jídlo), `act_YYYY-MM-DD` (aktivity), `recent` (max. 1000), `recent_act` (max. 200),
+hmotnost je sdílená s nastavením pod klíčem `weight`.
 
 ## Design – převzít z projektu `D:\projekty\nakupniseznam\`
 
@@ -83,6 +100,8 @@ Zdroj: `nakupniseznam/lib/main.dart` (celá aplikace je v jednom souboru, téma 
 - **Swipe:** `Dismissible` endToStart, červené zaoblené pozadí, ikona `Icons.delete` bílá vpravo.
 - **FAB:** černý, bílá ikona `Icons.add`, elevation 2.
 - **Dialogy:** pozadí surfaceVariant, „Zrušit“ jako tlumený `TextButton`, potvrzení `FilledButton`.
+- **Akcent aktivit:** `activityColor` `#4EC9B0` (tyrkysová z palety VS Code, v `ColorScheme` jako `tertiary`). Nákupní seznam třetí akcent nemá.
+- **Chipy:** pozadí surface, vybraný primary, bez okraje, zaoblení 12.
 - **Animace:** jen výchozí Material.
 
 Odchylky: Nákupní seznam má v řádku i tlačítko koše. Tady se maže jen swipem, protože to tak chce zadání (a snackbar „Vrátit“ je navíc).

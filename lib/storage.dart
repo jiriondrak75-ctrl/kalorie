@@ -12,6 +12,14 @@ class RecentFood {
   const RecentFood(this.food, this.amount);
 }
 
+/// Naposledy použitá aktivita i s poslední délkou (null u ručně zadaných).
+class RecentActivity {
+  final Activity activity;
+  final double? minutes;
+
+  const RecentActivity(this.activity, this.minutes);
+}
+
 /// Uživatelské nastavení. Null = nezadáno.
 class Settings {
   final double? weight;
@@ -36,10 +44,12 @@ class Settings {
   }
 }
 
-/// Lokální úložiště: klíč `day_YYYY-MM-DD` pro záznamy dne, `recent`
+/// Lokální úložiště: klíč `day_YYYY-MM-DD` pro jídlo dne, `act_YYYY-MM-DD`
+/// pro aktivity dne, `recent` a `recent_act` pro naposledy použité
 /// a nastavení (`weight`, `height`, `age`, `male`, `kcal_goal`).
 class Store {
   static const _recentKey = 'recent';
+  static const _recentActKey = 'recent_act';
   static const _weightKey = 'weight';
   static const _heightKey = 'height';
   static const _ageKey = 'age';
@@ -79,11 +89,18 @@ class Store {
     }
   }
 
+  static Future<void> saveWeight(double kg) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_weightKey, kg);
+  }
+
   // Slouží zároveň jako vlastní databáze potravin, proto velký limit.
   static const _recentMax = 1000;
 
-  static String _dayKey(DateTime d) =>
-      'day_${d.year.toString().padLeft(4, '0')}-'
+  static const _recentActMax = 200;
+
+  static String _dayKey(DateTime d, [String prefix = 'day']) =>
+      '${prefix}_${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
@@ -133,6 +150,71 @@ class Store {
       _recentKey,
       jsonEncode(
         list.map((r) => {'food': r.food.toJson(), 'amount': r.amount}).toList(),
+      ),
+    );
+  }
+
+  static Future<List<ActivityEntry>> loadActivities(DateTime day) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_dayKey(day, 'act'));
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List)
+        .map((e) => ActivityEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<void> saveActivities(
+    DateTime day,
+    List<ActivityEntry> entries,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _dayKey(day, 'act');
+    if (entries.isEmpty) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(
+        key,
+        jsonEncode(entries.map((e) => e.toJson()).toList()),
+      );
+    }
+  }
+
+  static Future<List<RecentActivity>> loadRecentActivities() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_recentActKey);
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List).map((e) {
+      final m = e as Map<String, dynamic>;
+      return RecentActivity(
+        Activity.fromJson(m['activity'] as Map<String, dynamic>),
+        (m['minutes'] as num?)?.toDouble(),
+      );
+    }).toList();
+  }
+
+  /// Přesune aktivitu na začátek seznamu a zapamatuje si délku.
+  static Future<void> addRecentActivity(
+    Activity activity,
+    double? minutes,
+  ) async {
+    final list = await loadRecentActivities();
+    list.removeWhere((r) => r.activity.key == activity.key);
+    list.insert(0, RecentActivity(activity, minutes));
+    if (list.length > _recentActMax) {
+      list.removeRange(_recentActMax, list.length);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _recentActKey,
+      jsonEncode(
+        list
+            .map(
+              (r) => {
+                'activity': r.activity.toJson(),
+                if (r.minutes != null) 'minutes': r.minutes,
+              },
+            )
+            .toList(),
       ),
     );
   }

@@ -7,7 +7,9 @@ import '../models.dart';
 import '../off_api.dart';
 import '../storage.dart';
 import '../theme.dart';
+import '../builtin_activities.dart';
 import '../widgets/amount_sheet.dart';
+import '../widgets/manual_dialog.dart';
 import '../widgets/row_card.dart';
 
 /// Hledání jídla. Vrací vybraný [Entry] přes Navigator.pop.
@@ -123,11 +125,9 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _manual() async {
-    final food = await showDialog<Food>(
-      context: context,
-      builder: (_) => _ManualDialog(initialName: _query),
-    );
-    if (food == null || !mounted) return;
+    final r = await showManualDialog(context, name: _query);
+    if (r == null || !mounted) return;
+    final food = Food(name: r.name, kcal: r.kcal, perServing: true);
     await Store.addRecent(food, 1);
     if (!mounted) return;
     Navigator.of(context).pop(Entry(food: food, amount: 1));
@@ -135,7 +135,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scale = uiScale(context);
     final local = _localMatches;
     final items = <Widget>[
       for (final r in local)
@@ -169,23 +168,169 @@ class _SearchScreenState extends State<SearchScreen> {
         const _Hint('Enter = hledat i v Open Food Facts'),
     ];
 
+    return _SearchScaffold(
+      controller: _controller,
+      hint: 'Hledat jídlo',
+      onChanged: _onChanged,
+      onSubmitted: _searchOff,
+      onManual: _manual,
+      items: items,
+    );
+  }
+
+  String _subtitle(Food f) => [
+    if (f.brand != null) f.brand!,
+    '${fmtNum(f.kcal, decimals: 0)} kcal / ${f.perServing ? 'porce' : '100 g'}',
+  ].join(' · ');
+}
+
+/// Hledání aktivity. Jen lokálně, bez sítě. Vrací [ActivityEntry].
+class ActivitySearchScreen extends StatefulWidget {
+  final double weightKg;
+
+  const ActivitySearchScreen({super.key, required this.weightKg});
+
+  @override
+  State<ActivitySearchScreen> createState() => _ActivitySearchScreenState();
+}
+
+class _ActivitySearchScreenState extends State<ActivitySearchScreen> {
+  static const _defaultMinutes = 30.0;
+
+  final _controller = TextEditingController();
+  List<RecentActivity> _recent = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecent();
+  }
+
+  Future<void> _loadRecent() async {
+    final recent = await Store.loadRecentActivities();
+    if (!mounted) return;
+    setState(() => _recent = recent);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String get _query => _controller.text.trim();
+
+  /// Naposledy použité, pak vestavěné. Bez diakritiky.
+  List<RecentActivity> get _matches {
+    final tokens = norm(
+      _query,
+    ).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    bool matches(Activity a) => tokens.every(norm(a.name).contains);
+
+    final seen = <String>{};
+    return [
+      for (final r in _recent)
+        if (matches(r.activity) && seen.add(r.activity.key)) r,
+      for (final a in builtinActivities)
+        if (matches(a) && seen.add(a.key)) RecentActivity(a, _defaultMinutes),
+    ];
+  }
+
+  Future<void> _pick(RecentActivity r) async {
+    if (r.activity.manual) {
+      return _manual(name: r.activity.name, kcal: r.activity.kcal);
+    }
+    final minutes = await showMinutesSheet(
+      context,
+      activity: r.activity,
+      initialMinutes: r.minutes ?? _defaultMinutes,
+      weightKg: widget.weightKg,
+    );
+    if (minutes == null || !mounted) return;
+    await Store.addRecentActivity(r.activity, minutes);
+    if (!mounted) return;
+    Navigator.of(context).pop(
+      ActivityEntry(
+        activity: r.activity,
+        minutes: minutes,
+        weightKg: widget.weightKg,
+      ),
+    );
+  }
+
+  Future<void> _manual({String? name, double? kcal}) async {
+    final r = await showManualDialog(context, name: name ?? _query, kcal: kcal);
+    if (r == null || !mounted) return;
+    final activity = Activity(name: r.name, kcal: r.kcal);
+    await Store.addRecentActivity(activity, null);
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pop(ActivityEntry(activity: activity, weightKg: widget.weightKg));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = _matches;
+    return _SearchScaffold(
+      controller: _controller,
+      hint: 'Jakou aktivitu?',
+      onChanged: () => setState(() {}),
+      onManual: _manual,
+      items: [
+        for (final r in matches)
+          RowCard(
+            title: r.activity.name,
+            subtitle: r.activity.manual
+                ? 'zadáno ručně'
+                : '${fmtNum(r.minutes ?? _defaultMinutes)} min',
+            trailing:
+                '${fmtNum(-r.activity.kcalFor(r.minutes ?? _defaultMinutes, widget.weightKg), decimals: 0)} kcal',
+            trailingColor: activityColor,
+            onTap: () => _pick(r),
+          ),
+        if (matches.isEmpty)
+          const _Hint('Nic nenalezeno. Zkuste „Zadat ručně“.'),
+      ],
+    );
+  }
+}
+
+/// Společný vzhled hledání: pole v AppBaru, „Zadat ručně“ a seznam.
+class _SearchScaffold extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final VoidCallback onChanged;
+  final VoidCallback? onSubmitted;
+  final VoidCallback onManual;
+  final List<Widget> items;
+
+  const _SearchScaffold({
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
+    this.onSubmitted,
+    required this.onManual,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = uiScale(context);
     return Scaffold(
       appBar: AppBar(
         title: TextField(
-          controller: _controller,
+          controller: controller,
           autofocus: true,
           textInputAction: TextInputAction.search,
           style: const TextStyle(color: textColor, fontSize: 17),
-          decoration: const InputDecoration(
-            hintText: 'Hledat jídlo',
-            border: InputBorder.none,
-          ),
-          onChanged: (_) => _onChanged(),
-          onSubmitted: (_) => _searchOff(),
+          decoration: InputDecoration(hintText: hint, border: InputBorder.none),
+          onChanged: (_) => onChanged(),
+          onSubmitted: (_) => onSubmitted?.call(),
         ),
         actions: [
           TextButton(
-            onPressed: _manual,
+            onPressed: onManual,
             child: const Text(
               'Zadat ručně',
               style: TextStyle(color: blueLight),
@@ -205,11 +350,6 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
     );
   }
-
-  String _subtitle(Food f) => [
-    if (f.brand != null) f.brand!,
-    '${fmtNum(f.kcal, decimals: 0)} kcal / ${f.perServing ? 'porce' : '100 g'}',
-  ].join(' · ');
 }
 
 class _Header extends StatelessWidget {
@@ -241,78 +381,4 @@ class _Hint extends StatelessWidget {
       style: const TextStyle(color: textDim),
     ),
   );
-}
-
-/// Ruční zadání: jen název a celkové kcal.
-class _ManualDialog extends StatefulWidget {
-  final String initialName;
-
-  const _ManualDialog({required this.initialName});
-
-  @override
-  State<_ManualDialog> createState() => _ManualDialogState();
-}
-
-class _ManualDialogState extends State<_ManualDialog> {
-  late final _name = TextEditingController(text: widget.initialName);
-  final _kcal = TextEditingController();
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _kcal.dispose();
-    super.dispose();
-  }
-
-  Food? get _food {
-    final name = _name.text.trim();
-    final kcal = parseNum(_kcal.text);
-    if (name.isEmpty || kcal == null || kcal < 0) return null;
-    return Food(name: name, kcal: kcal, perServing: true);
-  }
-
-  void _save() {
-    final f = _food;
-    if (f != null) Navigator.of(context).pop(f);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Zadat ručně', style: TextStyle(color: textColor)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _name,
-            autofocus: widget.initialName.isEmpty,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(hintText: 'Název'),
-            onChanged: (_) => setState(() {}),
-          ),
-          TextField(
-            controller: _kcal,
-            autofocus: widget.initialName.isNotEmpty,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              hintText: 'Celkem',
-              suffixText: 'kcal',
-            ),
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _save(),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Zrušit', style: TextStyle(color: textDim)),
-        ),
-        FilledButton(
-          onPressed: _food == null ? null : _save,
-          child: const Text('Přidat'),
-        ),
-      ],
-    );
-  }
 }
